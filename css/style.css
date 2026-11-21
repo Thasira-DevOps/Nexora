@@ -1,0 +1,40 @@
+body {
+    font-family: system-ui, sans-serif;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 16px;
+    background: #f8f9fc;
+    color: #1d1e20;
+}
+
+section {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+input, textarea, button {
+    font: inherit;
+    padding: 8px;
+    margin: 4px 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+textarea, input[type="text"] {
+    width: 100%;
+}
+
+button {
+    background: #4f46e5;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+ul {
+    padding-left: 20px;
+}
