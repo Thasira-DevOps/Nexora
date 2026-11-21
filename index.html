@@ -2,41 +2,118 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Nexora</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#4f46e5">
+    <meta name="theme-color" content="#1b1840">
 </head>
 <body>
-<h1>Nexora</h1>
+<div class="app">
+    <header>
+        <h1>Nexora</h1>
+        <p>Plan your day. Keep what lifts you up.</p>
+    </header>
 
-<section id="cookie-jar">
-    <h2>🍪 Cookie Jar</h2>
-    <textarea id="cookie-input" placeholder="Write something that makes you happy or motivated..."></textarea>
-    <button id="add-cookie">Add to jar</button>
-    <button id="pull-cookie">Pull a cookie</button>
-    <p id="cookie-display"></p>
-</section>
-<section id="notes">
-    <h2>📝 Notes & Reminders</h2>
-    <input id="note-title" type="text" placeholder="Title">
-    <textarea id="note-body" placeholder="Details (optional)"></textarea>
-    <label>Remind me at (optional):
-        <input id="note-due" type="datetime-local">
-    </label>
-    <button id="add-note">Save note</button>
-    <ul id="note-list"></ul>
-</section>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+        <button class="tab active" role="tab" aria-selected="true" data-tab="cookie-jar">
+            <span class="icon" aria-hidden="true">🍪</span>Cookie Jar
+        </button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="calendar">
+            <span class="icon" aria-hidden="true">📅</span>Calendar
+        </button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="goals">
+            <span class="icon" aria-hidden="true">🎯</span>Goals
+        </button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="notes">
+            <span class="icon" aria-hidden="true">📝</span>Notes
+        </button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="backup">
+            <span class="icon" aria-hidden="true">💾</span>Backup
+        </button>
+    </nav>
 
-<section id="backup">
-    <h2>💾 Backup</h2>
-    <button id="export-data">Export all data</button>
-    <label>Import backup:
-        <input id="import-file" type="file" accept=".json,application/json">
-    </label>
-    <p id="backup-status"></p>
-</section>
+    <main>
+        <section id="cookie-jar" class="panel" role="tabpanel">
+            <h2>Cookie Jar</h2>
+            <p class="hint">Save things that make you happy or motivated. Pull one out when you need it.</p>
+            <label for="cookie-input">New cookie</label>
+            <textarea id="cookie-input" placeholder="A kind message, a proud moment, a reason to keep going..."></textarea>
+            <div class="actions">
+                <button id="add-cookie" class="primary">Add to jar</button>
+                <button id="pull-cookie" class="secondary">Pull a cookie</button>
+            </div>
+            <p id="cookie-display" aria-live="polite"></p>
+        </section>
+
+        <section id="calendar" class="panel" role="tabpanel" hidden>
+            <h2>Calendar</h2>
+            <p class="hint">Plan your days and your weekly timetable. Notes with a reminder time show up here too.</p>
+
+            <div class="month-bar">
+                <button id="prev-month" class="ghost" aria-label="Previous month">‹</button>
+                <strong id="calendar-title"></strong>
+                <button id="next-month" class="ghost" aria-label="Next month">›</button>
+                <button id="today-button" class="ghost">Today</button>
+            </div>
+            <div id="calendar-grid" class="calendar-grid"></div>
+
+            <h3 id="day-heading"></h3>
+            <ul id="day-list" class="notes"></ul>
+
+            <h3>Add an event</h3>
+            <label for="event-title">Title</label>
+            <input id="event-title" type="text" placeholder="Lecture, meeting, study session...">
+            <label for="event-date">Date</label>
+            <input id="event-date" type="date">
+            <label for="event-time">Time (optional)</label>
+            <input id="event-time" type="time">
+            <label class="check"><input id="event-repeat" type="checkbox"> Repeat every week</label>
+            <div class="actions">
+                <button id="add-event" class="primary">Save event</button>
+            </div>
+        </section>
+
+        <section id="goals" class="panel" role="tabpanel" hidden>
+            <h2>Goal Map</h2>
+            <p class="hint">Turn a goal into a route of small steps and tick them off as you go.</p>
+            <label for="goal-title">Goal</label>
+            <input id="goal-title" type="text" placeholder="What do you want to achieve?">
+            <label for="goal-steps">Steps (one per line)</label>
+            <textarea id="goal-steps" placeholder="Finish chapter 1&#10;Do past papers&#10;Revise weak topics"></textarea>
+            <div class="actions">
+                <button id="add-goal" class="primary">Add goal</button>
+            </div>
+            <ul id="goal-list" class="goals"></ul>
+        </section>
+
+        <section id="notes" class="panel" role="tabpanel" hidden>
+            <h2>Notes &amp; Reminders</h2>
+            <p class="hint">Jot something down. Add a time if you want it flagged when it is due.</p>
+            <label for="note-title">Title</label>
+            <input id="note-title" type="text" placeholder="What do you need to remember?">
+            <label for="note-body">Details (optional)</label>
+            <textarea id="note-body"></textarea>
+            <label for="note-due">Remind me at (optional)</label>
+            <input id="note-due" type="datetime-local">
+            <div class="actions">
+                <button id="add-note" class="primary">Save note</button>
+            </div>
+            <ul id="note-list" class="notes"></ul>
+        </section>
+
+        <section id="backup" class="panel" role="tabpanel" hidden>
+            <h2>Backup</h2>
+            <p class="hint">Your data lives only on this device. Export a file to keep a copy, and import it to restore.</p>
+            <div class="actions">
+                <button id="export-data" class="primary">Export all data</button>
+            </div>
+            <label for="import-file">Import a backup file</label>
+            <input id="import-file" type="file" accept=".json,application/json">
+            <p id="backup-status" aria-live="polite"></p>
+        </section>
+    </main>
+</div>
 
 <script src="js/app.js"></script>
 </body>
