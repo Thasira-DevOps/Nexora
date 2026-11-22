@@ -1,18 +1,25 @@
+// ================= Nexora =================
+
 // ---------- Database (IndexedDB, stored only on this device) ----------
 const DB_NAME = "nexora";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE_COOKIES = "cookies";
 const STORE_NOTES = "notes";
 const STORE_EVENTS = "events";
 const STORE_GOALS = "goals";
+const ALL_STORES = [STORE_COOKIES, STORE_NOTES, STORE_EVENTS, STORE_GOALS];
+
+let dbPromise = null;
 
 function openDB() {
-    return new Promise((resolve, reject) => {
+    if (dbPromise) return dbPromise;
+
+    dbPromise = new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
         request.onupgradeneeded = () => {
             const db = request.result;
-            for (const name of [STORE_COOKIES, STORE_NOTES, STORE_EVENTS, STORE_GOALS]) {
+            for (const name of ALL_STORES) {
                 if (!db.objectStoreNames.contains(name)) {
                     db.createObjectStore(name, { keyPath: "id", autoIncrement: true });
                 }
@@ -21,98 +28,117 @@ function openDB() {
 
         request.onsuccess = () => {
             const db = request.result;
-            // Let a newer version of the app upgrade the database
-            db.onversionchange = () => db.close();
+            // Allow a newer version of the app to upgrade the database
+            db.onversionchange = () => {
+                db.close();
+                dbPromise = null;
+            };
             resolve(db);
         };
 
-        request.onerror = () => reject(request.error);
-        request.onblocked = () => alert("Please close other Nexora tabs or windows, then reload this page.");
+        request.onerror = () => {
+            dbPromise = null;
+            reject(request.error);
+        };
+
+        request.onblocked = () => {
+            alert("Please close other Nexora tabs or windows, then reload this page.");
+        };
     });
+
+    return dbPromise;
 }
 
-async function addCookie(text) {
+async function dbGetAll(storeName) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_COOKIES, "readwrite");
-        tx.objectStore(STORE_COOKIES).add({text: text, createdAt: Date.now()});
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
-async function getAllCookies() {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_COOKIES, "readonly");
-        const request = tx.objectStore(STORE_COOKIES).getAll();
+        const request = db.transaction(storeName, "readonly").objectStore(storeName).getAll();
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
     });
 }
 
-// ---------- Cookie Jar UI ----------
+// Adds a new item, or updates it if it already has an id
+async function dbPut(storeName, item) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, "readwrite");
+        tx.objectStore(storeName).put(item);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+async function dbDelete(storeName, id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, "readwrite");
+        tx.objectStore(storeName).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+// Replaces everything in a store with the given items (ids are kept)
+async function dbReplaceAll(storeName, items) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, "readwrite");
+        const store = tx.objectStore(storeName);
+        store.clear();
+        for (const item of items) {
+            store.put(item);
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+// Wraps a click handler so that any error is shown instead of failing silently
+function safe(handler) {
+    return async (...args) => {
+        try {
+            await handler(...args);
+        } catch (error) {
+            console.error(error);
+            alert("Something went wrong: " + error.message);
+        }
+    };
+}
+
+// ---------- Cookie Jar ----------
 const cookieInput = document.getElementById("cookie-input");
 const cookieDisplay = document.getElementById("cookie-display");
 
-document.getElementById("add-cookie").addEventListener("click", async () => {
+document.getElementById("add-cookie").addEventListener("click", safe(async () => {
     const text = cookieInput.value.trim();
     if (text === "") {
         cookieDisplay.textContent = "Write something first.";
         return;
     }
-    await addCookie(text);
+    await dbPut(STORE_COOKIES, { text: text, createdAt: Date.now() });
     cookieInput.value = "";
     cookieDisplay.textContent = "Cookie added to your jar! 🍪";
-});
+}));
 
-document.getElementById("pull-cookie").addEventListener("click", async () => {
-    const cookies = await getAllCookies();
+document.getElementById("pull-cookie").addEventListener("click", safe(async () => {
+    const cookies = await dbGetAll(STORE_COOKIES);
     if (cookies.length === 0) {
         cookieDisplay.textContent = "Your jar is empty. Add your first cookie!";
         return;
     }
     const randomIndex = Math.floor(Math.random() * cookies.length);
     cookieDisplay.textContent = cookies[randomIndex].text;
-});
+}));
+
 // ---------- Notes & Reminders ----------
-async function addNote(note) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NOTES, "readwrite");
-        tx.objectStore(STORE_NOTES).add(note);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
-async function getAllNotes() {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NOTES, "readonly");
-        const request = tx.objectStore(STORE_NOTES).getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
-}
-
-async function deleteNote(id) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NOTES, "readwrite");
-        tx.objectStore(STORE_NOTES).delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
 const noteTitle = document.getElementById("note-title");
 const noteBody = document.getElementById("note-body");
 const noteDue = document.getElementById("note-due");
 const noteList = document.getElementById("note-list");
 
 async function renderNotes() {
-    const notes = await getAllNotes();
+    const notes = await dbGetAll(STORE_NOTES);
     const sortKey = (n) => n.due ?? Number.MAX_SAFE_INTEGER;
     notes.sort((a, b) => sortKey(a) - sortKey(b));
 
@@ -154,169 +180,32 @@ async function renderNotes() {
         const deleteButton = document.createElement("button");
         deleteButton.className = "ghost";
         deleteButton.textContent = "Delete";
-        deleteButton.addEventListener("click", async () => {
-            await deleteNote(note.id);
-            renderNotes();
-        });
+        deleteButton.addEventListener("click", safe(async () => {
+            await dbDelete(STORE_NOTES, note.id);
+            await renderNotes();
+        }));
 
         li.append(text, deleteButton);
         noteList.appendChild(li);
     }
 }
 
-document.getElementById("add-note").addEventListener("click", async () => {
+document.getElementById("add-note").addEventListener("click", safe(async () => {
     const title = noteTitle.value.trim();
-    if (title === "") {
-        return;
-    }
-    await addNote({
+    if (title === "") return;
+
+    await dbPut(STORE_NOTES, {
         title: title,
         body: noteBody.value.trim(),
         due: noteDue.value ? new Date(noteDue.value).getTime() : null,
         createdAt: Date.now()
     });
+
     noteTitle.value = "";
     noteBody.value = "";
     noteDue.value = "";
-    renderNotes();
-});
-
-// Show saved notes on load, and refresh every 30 seconds so due reminders get marked
-renderNotes();
-setInterval(renderNotes, 30000);
-// ---------- Backup: Export / Import ----------
-const backupStatus = document.getElementById("backup-status");
-
-async function exportAllData() {
-    try {
-        const data = {
-            app: "nexora",
-            version: 2,
-            exportedAt: new Date().toISOString(),
-            cookies: await getAllCookies(),
-            notes: await getAllNotes(),
-            events: await dbGetAll(STORE_EVENTS),
-            goals: await dbGetAll(STORE_GOALS)
-        };
-
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "nexora-backup-" + new Date().toISOString().slice(0, 10) + ".json";
-        link.click();
-        URL.revokeObjectURL(url);
-
-        backupStatus.textContent = "Backup file downloaded. Keep it somewhere safe.";
-    } catch (error) {
-        backupStatus.textContent = "Export failed: " + error.message;
-    }
-}
-
-
-// Replaces everything in a store with the given items (ids are kept)
-async function replaceStore(storeName, items) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, "readwrite");
-        const store = tx.objectStore(storeName);
-        store.clear();
-        for (const item of items) {
-            store.put(item);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
-async function importAllData(file) {
-    try {
-        const data = JSON.parse(await file.text());
-
-        const isValid = data.app === "nexora" &&
-            Array.isArray(data.cookies) &&
-            Array.isArray(data.notes);
-        if (!isValid) {
-            backupStatus.textContent = "This is not a valid Nexora backup file.";
-            return;
-        }
-
-        const confirmed = confirm("Importing will replace ALL current data in this app. Continue?");
-        if (!confirmed) {
-            return;
-        }
-
-        // Older backups (version 1) have no events or goals
-        const events = Array.isArray(data.events) ? data.events : [];
-        const goals = Array.isArray(data.goals) ? data.goals : [];
-
-        await replaceStore(STORE_COOKIES, data.cookies);
-        await replaceStore(STORE_NOTES, data.notes);
-        await replaceStore(STORE_EVENTS, events);
-        await replaceStore(STORE_GOALS, goals);
-        await renderNotes();
-        await renderCalendar();
-        await renderGoals();
-        backupStatus.textContent = "Import complete: " + data.cookies.length + " cookies, " +
-            data.notes.length + " notes, " + events.length + " events and " +
-            goals.length + " goals restored.";
-    } catch (error) {
-        backupStatus.textContent = "Import failed. The file may be damaged.";
-    }
-}
-
-// ---------- PWA: register the service worker ----------
-if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js");
-}
-
-// ---------- Tabs ----------
-const tabButtons = document.querySelectorAll(".tab");
-const panels = document.querySelectorAll(".panel");
-
-function showTab(name) {
-    tabButtons.forEach((button) => {
-        const isActive = button.dataset.tab === name;
-        button.classList.toggle("active", isActive);
-        button.setAttribute("aria-selected", String(isActive));
-    });
-    panels.forEach((panel) => {
-        panel.hidden = panel.id !== name;
-    });
-    if (name === "calendar") renderCalendar();
-    if (name === "goals") renderGoals();
-}
-
-// ---------- Generic database helpers ----------
-async function dbGetAll(storeName) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const request = db.transaction(storeName, "readonly").objectStore(storeName).getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
-}
-
-// Adds a new item, or updates it if it already has an id
-async function dbPut(storeName, item) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, "readwrite");
-        tx.objectStore(storeName).put(item);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
-async function dbDelete(storeName, id) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, "readwrite");
-        tx.objectStore(storeName).delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
+    await renderNotes();
+}));
 
 // ---------- Calendar ----------
 const calendarGrid = document.getElementById("calendar-grid");
@@ -327,10 +216,6 @@ const eventTitle = document.getElementById("event-title");
 const eventDate = document.getElementById("event-date");
 const eventTime = document.getElementById("event-time");
 const eventRepeat = document.getElementById("event-repeat");
-
-let viewYear = new Date().getFullYear();
-let viewMonth = new Date().getMonth();
-let selectedDate = toDateString(new Date());
 
 // Dates are stored as "YYYY-MM-DD" in local time
 function toDateString(date) {
@@ -343,6 +228,10 @@ function parseDate(dateString) {
     const [year, month, day] = dateString.split("-").map(Number);
     return new Date(year, month - 1, day);
 }
+
+let viewYear = new Date().getFullYear();
+let viewMonth = new Date().getMonth();
+let selectedDate = toDateString(new Date());
 
 // Weekly events repeat on the same weekday from their start date onwards
 function occursOn(event, dateString) {
@@ -359,7 +248,7 @@ function noteIsOn(note, dateString) {
 
 async function renderCalendar() {
     const events = await dbGetAll(STORE_EVENTS);
-    const notes = await getAllNotes();
+    const notes = await dbGetAll(STORE_NOTES);
 
     const firstOfMonth = new Date(viewYear, viewMonth, 1);
     calendarTitle.textContent = firstOfMonth.toLocaleString("en-US", { month: "long", year: "numeric" });
@@ -395,11 +284,11 @@ async function renderCalendar() {
             notes.some((n) => noteIsOn(n, dateString));
         if (hasItems) button.classList.add("has-items");
 
-        button.addEventListener("click", () => {
+        button.addEventListener("click", safe(async () => {
             selectedDate = dateString;
             eventDate.value = dateString;
-            renderCalendar();
-        });
+            await renderCalendar();
+        }));
         calendarGrid.appendChild(button);
     }
 
@@ -440,14 +329,14 @@ function renderDayList(events, notes) {
         const deleteButton = document.createElement("button");
         deleteButton.className = "ghost";
         deleteButton.textContent = "Delete";
-        deleteButton.addEventListener("click", async () => {
+        deleteButton.addEventListener("click", safe(async () => {
             const message = event.repeat === "weekly"
                 ? "Delete this event and all its weekly repeats?"
                 : "Delete this event?";
             if (!confirm(message)) return;
             await dbDelete(STORE_EVENTS, event.id);
-            renderCalendar();
-        });
+            await renderCalendar();
+        }));
 
         li.append(text, deleteButton);
         dayList.appendChild(li);
@@ -471,30 +360,33 @@ function renderDayList(events, notes) {
     }
 }
 
-document.getElementById("prev-month").addEventListener("click", () => {
+document.getElementById("prev-month").addEventListener("click", safe(async () => {
     viewMonth--;
     if (viewMonth < 0) { viewMonth = 11; viewYear--; }
-    renderCalendar();
-});
+    await renderCalendar();
+}));
 
-document.getElementById("next-month").addEventListener("click", () => {
+document.getElementById("next-month").addEventListener("click", safe(async () => {
     viewMonth++;
     if (viewMonth > 11) { viewMonth = 0; viewYear++; }
-    renderCalendar();
-});
+    await renderCalendar();
+}));
 
-document.getElementById("today-button").addEventListener("click", () => {
+document.getElementById("today-button").addEventListener("click", safe(async () => {
     const today = new Date();
     viewYear = today.getFullYear();
     viewMonth = today.getMonth();
     selectedDate = toDateString(today);
     eventDate.value = selectedDate;
-    renderCalendar();
-});
+    await renderCalendar();
+}));
 
-document.getElementById("add-event").addEventListener("click", async () => {
+document.getElementById("add-event").addEventListener("click", safe(async () => {
     const title = eventTitle.value.trim();
-    if (title === "" || eventDate.value === "") return;
+    if (title === "" || eventDate.value === "") {
+        alert("Please enter a title and pick a date.");
+        return;
+    }
 
     await dbPut(STORE_EVENTS, {
         title: title,
@@ -512,8 +404,8 @@ document.getElementById("add-event").addEventListener("click", async () => {
     const picked = parseDate(selectedDate);
     viewYear = picked.getFullYear();
     viewMonth = picked.getMonth();
-    renderCalendar();
-});
+    await renderCalendar();
+}));
 
 // ---------- Goal Map ----------
 const goalTitle = document.getElementById("goal-title");
@@ -547,11 +439,11 @@ async function renderGoals() {
         const deleteButton = document.createElement("button");
         deleteButton.className = "ghost";
         deleteButton.textContent = "Delete";
-        deleteButton.addEventListener("click", async () => {
+        deleteButton.addEventListener("click", safe(async () => {
             if (!confirm("Delete this goal?")) return;
             await dbDelete(STORE_GOALS, goal.id);
-            renderGoals();
-        });
+            await renderGoals();
+        }));
         header.append(title, deleteButton);
 
         const progress = document.createElement("div");
@@ -575,11 +467,11 @@ async function renderGoals() {
             const checkbox = document.createElement("input");
             checkbox.type = "checkbox";
             checkbox.checked = step.done;
-            checkbox.addEventListener("change", async () => {
+            checkbox.addEventListener("change", safe(async () => {
                 goal.steps[index].done = checkbox.checked;
                 await dbPut(STORE_GOALS, goal);
-                renderGoals();
-            });
+                await renderGoals();
+            }));
             const text = document.createElement("span");
             text.textContent = step.text;
 
@@ -593,9 +485,12 @@ async function renderGoals() {
     }
 }
 
-document.getElementById("add-goal").addEventListener("click", async () => {
+document.getElementById("add-goal").addEventListener("click", safe(async () => {
     const title = goalTitle.value.trim();
-    if (title === "") return;
+    if (title === "") {
+        alert("Please enter a goal.");
+        return;
+    }
 
     const steps = goalSteps.value
         .split("\n")
@@ -607,14 +502,112 @@ document.getElementById("add-goal").addEventListener("click", async () => {
 
     goalTitle.value = "";
     goalSteps.value = "";
-    renderGoals();
-});
+    await renderGoals();
+}));
 
-// Initial render
-eventDate.value = selectedDate;
-renderCalendar();
-renderGoals();
+// ---------- Backup: Export / Import ----------
+const backupStatus = document.getElementById("backup-status");
+
+document.getElementById("export-data").addEventListener("click", safe(async () => {
+    const data = {
+        app: "nexora",
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        cookies: await dbGetAll(STORE_COOKIES),
+        notes: await dbGetAll(STORE_NOTES),
+        events: await dbGetAll(STORE_EVENTS),
+        goals: await dbGetAll(STORE_GOALS)
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "nexora-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    backupStatus.textContent = "Backup file downloaded. Keep it somewhere safe.";
+}));
+
+document.getElementById("import-file").addEventListener("change", safe(async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    let data;
+    try {
+        data = JSON.parse(await file.text());
+    } catch (error) {
+        backupStatus.textContent = "Import failed. The file is not valid JSON.";
+        event.target.value = "";
+        return;
+    }
+
+    const isValid = data.app === "nexora" &&
+        Array.isArray(data.cookies) &&
+        Array.isArray(data.notes);
+    if (!isValid) {
+        backupStatus.textContent = "This is not a valid Nexora backup file.";
+        event.target.value = "";
+        return;
+    }
+
+    if (!confirm("Importing will replace ALL current data in this app. Continue?")) {
+        event.target.value = "";
+        return;
+    }
+
+    // Older backups (version 1) have no events or goals
+    const events = Array.isArray(data.events) ? data.events : [];
+    const goals = Array.isArray(data.goals) ? data.goals : [];
+
+    await dbReplaceAll(STORE_COOKIES, data.cookies);
+    await dbReplaceAll(STORE_NOTES, data.notes);
+    await dbReplaceAll(STORE_EVENTS, events);
+    await dbReplaceAll(STORE_GOALS, goals);
+
+    await renderNotes();
+    await renderCalendar();
+    await renderGoals();
+
+    backupStatus.textContent = "Import complete: " + data.cookies.length + " cookies, " +
+        data.notes.length + " notes, " + events.length + " events and " +
+        goals.length + " goals restored.";
+    event.target.value = "";
+}));
+
+// ---------- Tabs ----------
+const tabButtons = document.querySelectorAll(".tab");
+const panels = document.querySelectorAll(".panel");
+
+function showTab(name) {
+    tabButtons.forEach((button) => {
+        const isActive = button.dataset.tab === name;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-selected", String(isActive));
+    });
+    panels.forEach((panel) => {
+        panel.hidden = panel.id !== name;
+    });
+    if (name === "calendar") renderCalendar();
+    if (name === "goals") renderGoals();
+}
 
 tabButtons.forEach((button) => {
     button.addEventListener("click", () => showTab(button.dataset.tab));
 });
+
+// ---------- Start ----------
+eventDate.value = selectedDate;
+renderNotes();
+renderCalendar();
+renderGoals();
+// Refresh every 30 seconds so reminders that become due get flagged
+setInterval(renderNotes, 30000);
+
+// ---------- PWA: register the service worker ----------
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js");
+}

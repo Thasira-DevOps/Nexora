@@ -1,4 +1,4 @@
-const CACHE_NAME = "nexora-v4";
+const CACHE_NAME = "nexora-v5";
 const FILES_TO_CACHE = [
     "./",
     "index.html",
@@ -9,15 +9,15 @@ const FILES_TO_CACHE = [
     "icons/icon-512.png"
 ];
 
-// Save app files so the app works offline
 self.addEventListener("install", (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => cache.addAll(FILES_TO_CACHE))
+        caches.open(CACHE_NAME).then((cache) =>
+            cache.addAll(FILES_TO_CACHE.map((file) => new Request(file, { cache: "reload" })))
+        )
     );
     self.skipWaiting();
 });
 
-// Remove old caches when the version changes
 self.addEventListener("activate", (event) => {
     event.waitUntil(
         caches.keys().then((keys) =>
@@ -27,9 +27,19 @@ self.addEventListener("activate", (event) => {
     self.clients.claim();
 });
 
-// Serve from cache first, fall back to network
+// Network first: use the latest files when online, fall back to the cache when offline
 self.addEventListener("fetch", (event) => {
+    if (event.request.method !== "GET") return;
+
     event.respondWith(
-        caches.match(event.request).then((cached) => cached || fetch(event.request))
+        fetch(event.request)
+            .then((response) => {
+                if (response.ok) {
+                    const copy = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+                }
+                return response;
+            })
+            .catch(() => caches.match(event.request))
     );
 });
