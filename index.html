@@ -4,20 +4,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Nexora</title>
+    <script>
+        // Apply the saved theme before the page paints, to avoid a flash
+        (function () {
+            var saved = "auto";
+            try { saved = localStorage.getItem("nexora-theme") || "auto"; } catch (e) {}
+            var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+            document.documentElement.dataset.theme = saved === "auto" ? (dark ? "dark" : "light") : saved;
+        })();
+    </script>
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
     <meta name="theme-color" content="#1b1840">
 </head>
 <body>
 <div class="app">
-    <header>
-        <h1>Nexora</h1>
-        <p>Plan your day. Keep what lifts you up.</p>
+    <header class="top">
+        <div>
+            <h1>Nexora</h1>
+            <p>Plan your day. Keep what lifts you up.</p>
+        </div>
+        <button id="settings-button" class="icon-button" aria-label="Settings">⚙️</button>
     </header>
 
     <nav class="tabs" role="tablist" aria-label="Sections">
-        <button class="tab active" role="tab" aria-selected="true" data-tab="cookie-jar">
-            <span class="icon" aria-hidden="true">🍪</span>Cookie Jar
+        <button class="tab active" role="tab" aria-selected="true" data-tab="today">
+            <span class="icon" aria-hidden="true">☀️</span>Today
         </button>
         <button class="tab" role="tab" aria-selected="false" data-tab="calendar">
             <span class="icon" aria-hidden="true">📅</span>Calendar
@@ -25,25 +39,38 @@
         <button class="tab" role="tab" aria-selected="false" data-tab="goals">
             <span class="icon" aria-hidden="true">🎯</span>Goals
         </button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="focus">
+            <span class="icon" aria-hidden="true">⏱️</span>Focus
+        </button>
         <button class="tab" role="tab" aria-selected="false" data-tab="notes">
             <span class="icon" aria-hidden="true">📝</span>Notes
         </button>
-        <button class="tab" role="tab" aria-selected="false" data-tab="backup">
-            <span class="icon" aria-hidden="true">💾</span>Backup
+        <button class="tab" role="tab" aria-selected="false" data-tab="cookie-jar">
+            <span class="icon" aria-hidden="true">🍪</span>Jar
         </button>
     </nav>
 
     <main>
-        <section id="cookie-jar" class="panel" role="tabpanel">
-            <h2>Cookie Jar</h2>
-            <p class="hint">Save things that make you happy or motivated. Pull one out when you need it.</p>
-            <label for="cookie-input">New cookie</label>
-            <textarea id="cookie-input" placeholder="A kind message, a proud moment, a reason to keep going..."></textarea>
+        <section id="today" class="panel" role="tabpanel">
+            <h2 id="today-heading">Today</h2>
+            <p id="today-date" class="hint"></p>
+
+            <h3>Check-in</h3>
+            <p id="streak-line" class="hint"></p>
+            <div id="mood-buttons" class="mood" role="group" aria-label="How is today going?"></div>
+            <label for="checkin-note">One line about today (optional)</label>
+            <input id="checkin-note" type="text" placeholder="What made today what it was?">
             <div class="actions">
-                <button id="add-cookie" class="primary">Add to jar</button>
-                <button id="pull-cookie" class="secondary">Pull a cookie</button>
+                <button id="save-checkin" class="primary">Save check-in</button>
             </div>
-            <p id="cookie-display" aria-live="polite"></p>
+            <p id="checkin-message" class="message" aria-live="polite"></p>
+            <div id="week-strip" class="week"></div>
+
+            <h3>Schedule</h3>
+            <ul id="today-schedule" class="notes"></ul>
+
+            <h3>Next steps</h3>
+            <ul id="today-steps" class="notes"></ul>
         </section>
 
         <section id="calendar" class="panel" role="tabpanel" hidden>
@@ -87,6 +114,32 @@
             <ul id="goal-list" class="goals"></ul>
         </section>
 
+        <section id="focus" class="panel" role="tabpanel" hidden>
+            <h2>Focus</h2>
+            <p class="hint">Work in short bursts with breaks in between.</p>
+
+            <div class="timer">
+                <p id="timer-mode" class="timer-mode">Focus</p>
+                <p id="timer-display" class="timer-display" role="timer">25:00</p>
+                <div class="timer-bar"><div id="timer-progress" class="timer-progress"></div></div>
+            </div>
+            <div class="actions center">
+                <button id="timer-toggle" class="primary">Start</button>
+                <button id="timer-reset" class="secondary">Reset</button>
+                <button id="timer-skip" class="secondary">Skip</button>
+            </div>
+            <p id="timer-message" class="message" aria-live="polite"></p>
+
+            <h3>Today</h3>
+            <p id="focus-stats" class="hint"></p>
+
+            <h3>Lengths</h3>
+            <label for="focus-minutes">Focus (minutes)</label>
+            <input id="focus-minutes" type="number" min="1" max="120" value="25">
+            <label for="break-minutes">Break (minutes)</label>
+            <input id="break-minutes" type="number" min="1" max="60" value="5">
+        </section>
+
         <section id="notes" class="panel" role="tabpanel" hidden>
             <h2>Notes &amp; Reminders</h2>
             <p class="hint">Jot something down. Add a time if you want it flagged when it is due.</p>
@@ -102,8 +155,44 @@
             <ul id="note-list" class="notes"></ul>
         </section>
 
-        <section id="backup" class="panel" role="tabpanel" hidden>
-            <h2>Backup</h2>
+        <section id="cookie-jar" class="panel" role="tabpanel" hidden>
+            <h2>Cookie Jar</h2>
+            <p class="hint">Save things that make you happy or motivated. Pull one out when you need it.</p>
+
+            <div id="jar" class="jar" aria-hidden="true"></div>
+            <p id="jar-count" class="jar-count"></p>
+
+            <div class="actions center">
+                <button id="pull-cookie" class="primary">Pull a cookie</button>
+            </div>
+            <p id="cookie-display" aria-live="polite"></p>
+
+            <h3>Add a cookie</h3>
+            <label for="cookie-input">New cookie</label>
+            <textarea id="cookie-input" placeholder="A kind message, a proud moment, a reason to keep going..."></textarea>
+            <div class="actions">
+                <button id="add-cookie" class="secondary">Add to jar</button>
+            </div>
+        </section>
+
+        <section id="settings" class="panel" role="tabpanel" hidden>
+            <h2>Settings</h2>
+
+            <h3>Appearance</h3>
+            <div class="segmented" role="group" aria-label="Theme">
+                <button data-theme-choice="auto" aria-pressed="true">Auto</button>
+                <button data-theme-choice="light" aria-pressed="false">Light</button>
+                <button data-theme-choice="dark" aria-pressed="false">Dark</button>
+            </div>
+
+            <h3>Notifications</h3>
+            <p class="hint">Nexora can alert you about reminders, event start times and finished focus sessions. This works while the app is open, even in the background. Nothing is sent to any server, so a fully closed app cannot wake your phone. For reminders in that case, tap "Add to phone" on a note or event to put it in your phone's own calendar.</p>
+            <div class="actions">
+                <button id="enable-notifications" class="secondary">Turn on notifications</button>
+            </div>
+            <p id="notification-status" class="message" aria-live="polite"></p>
+
+            <h3>Backup</h3>
             <p class="hint">Your data lives only on this device. Export a file to keep a copy, and import it to restore.</p>
             <div class="actions">
                 <button id="export-data" class="primary">Export all data</button>

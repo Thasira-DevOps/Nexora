@@ -1,4 +1,4 @@
-const CACHE_NAME = "nexora-v5";
+const CACHE_NAME = "nexora-v7";
 const FILES_TO_CACHE = [
     "./",
     "index.html",
@@ -41,5 +41,18 @@ self.addEventListener("fetch", (event) => {
                 return response;
             })
             .catch(() => caches.match(event.request))
+    );
+});
+
+// Open the app when a notification is tapped
+self.addEventListener("notificationclick", (event) => {
+    event.notification.close();
+    event.waitUntil(
+        self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+            for (const client of windows) {
+                if ("focus" in client) return client.focus();
+            }
+            return self.clients.openWindow("./index.html");
+        })
     );
 });
