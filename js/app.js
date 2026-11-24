@@ -356,6 +356,7 @@ const noteTitle = document.getElementById("note-title");
 const noteBody = document.getElementById("note-body");
 const noteDue = document.getElementById("note-due");
 const noteList = document.getElementById("note-list");
+const noteCountdown = document.getElementById("note-countdown");
 
 async function renderNotes() {
     const notes = await dbGetAll(STORE_NOTES);
@@ -439,12 +440,14 @@ document.getElementById("add-note").addEventListener("click", safe(async () => {
         title: title,
         body: noteBody.value.trim(),
         due: noteDue.value ? new Date(noteDue.value).getTime() : null,
+        countdown: noteCountdown.checked && noteDue.value !== "",
         createdAt: Date.now()
     });
 
     noteTitle.value = "";
     noteBody.value = "";
     noteDue.value = "";
+    noteCountdown.checked = false;
     await renderNotes();
 }));
 
@@ -457,6 +460,7 @@ const eventTitle = document.getElementById("event-title");
 const eventDate = document.getElementById("event-date");
 const eventTime = document.getElementById("event-time");
 const eventRepeat = document.getElementById("event-repeat");
+const eventCountdown = document.getElementById("event-countdown");
 
 let viewYear = new Date().getFullYear();
 let viewMonth = new Date().getMonth();
@@ -629,12 +633,14 @@ document.getElementById("add-event").addEventListener("click", safe(async () => 
         date: eventDate.value,
         time: eventTime.value,
         repeat: eventRepeat.checked ? "weekly" : "none",
+        countdown: eventCountdown.checked && !eventRepeat.checked,
         createdAt: Date.now()
     });
 
     eventTitle.value = "";
     eventTime.value = "";
     eventRepeat.checked = false;
+    eventCountdown.checked = false;
 
     selectedDate = eventDate.value;
     const picked = parseDate(selectedDate);
@@ -705,6 +711,7 @@ async function renderGoals() {
             checkbox.checked = step.done;
             checkbox.addEventListener("change", safe(async () => {
                 goal.steps[index].done = checkbox.checked;
+                goal.steps[index].doneAt = checkbox.checked ? Date.now() : null;
                 await dbPut(STORE_GOALS, goal);
                 await renderGoals();
             }));
@@ -819,6 +826,7 @@ const todayHeading = document.getElementById("today-heading");
 const todayDate = document.getElementById("today-date");
 const todaySchedule = document.getElementById("today-schedule");
 const todaySteps = document.getElementById("today-steps");
+const todayCountdown = document.getElementById("today-countdown");
 
 function greeting() {
     const hour = new Date().getHours();
@@ -890,6 +898,54 @@ async function renderToday() {
         todaySchedule.appendChild(li);
     }
 
+    // Coming up: exams and deadlines that are being counted down
+    const upcoming = [];
+    for (const event of events) {
+        if (!event.countdown || event.repeat === "weekly" || event.date < todayString) continue;
+        upcoming.push({ title: event.title, date: event.date, time: event.time || "" });
+    }
+    for (const note of notes) {
+        if (!note.countdown || note.due === null) continue;
+        const dueDate = toDateString(new Date(note.due));
+        if (dueDate < todayString) continue;
+        const dueAt = new Date(note.due);
+        upcoming.push({
+            title: note.title,
+            date: dueDate,
+            time: pad2(dueAt.getHours()) + ":" + pad2(dueAt.getMinutes())
+        });
+    }
+    upcoming.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+
+    todayCountdown.innerHTML = "";
+    if (upcoming.length === 0) {
+        addEmptyItem(todayCountdown, "Nothing is being counted down. Tick the countdown box on an exam or deadline.");
+    }
+    for (const item of upcoming.slice(0, 5)) {
+        const days = daysBetween(todayString, item.date);
+        const label = days === 0 ? "Today" : days === 1 ? "Tomorrow" : "In " + days + " days";
+
+        const li = document.createElement("li");
+        li.className = "note" + (days <= 3 ? " due" : "");
+
+        const text = document.createElement("div");
+        text.className = "note-text";
+        const title = document.createElement("strong");
+        title.textContent = item.title;
+        const detail = document.createElement("small");
+        detail.textContent = parseDate(item.date).toLocaleDateString("en-US", {
+            weekday: "short", month: "short", day: "numeric"
+        }) + (item.time ? " at " + item.time : "");
+        text.append(title, detail);
+
+        const count = document.createElement("span");
+        count.className = "count";
+        count.textContent = label;
+
+        li.append(text, count);
+        todayCountdown.appendChild(li);
+    }
+
     // Next steps: the next unfinished step of each goal
     todaySteps.innerHTML = "";
     let stepCount = 0;
@@ -910,6 +966,7 @@ async function renderToday() {
         checkbox.type = "checkbox";
         checkbox.addEventListener("change", safe(async () => {
             goal.steps[index].done = true;
+            goal.steps[index].doneAt = Date.now();
             await dbPut(STORE_GOALS, goal);
             await renderToday();
         }));
@@ -931,6 +988,7 @@ async function renderToday() {
     }
 
     await renderCheckin();
+    await renderReview();
 }
 
 // ---------- Quick add (understands plain sentences, no AI involved) ----------
@@ -958,6 +1016,8 @@ const RE_TODAY = /\b(?:today|tonight)\b/i;
 const RE_IN_N = /\bin\s+(\d{1,3})\s+(day|days|week|weeks)\b/i;
 const RE_PREFIXED_DAY = new RegExp("\\b(next|this|on)\\s+(" + ANY_DAY + ")\\b", "i");
 const RE_FULL_DAY = new RegExp("\\b(" + FULL_DAYS + ")\\b", "i");
+const RE_DEADLINE_WORDS = /\b(?:exams?|tests?|quiz|quizzes|viva|deadline|submission|submit|presentation|assignment|project|midterm|finals?)\b/i;
+const RE_PREPARATION = /^(?:study|revise|revision|prepare|practi[sc]e|review)\b/i;
 
 function pad2(number) {
     return String(number).padStart(2, "0");
@@ -1142,7 +1202,10 @@ function parseQuickAdd(input, now) {
     if (title === "") title = "Untitled";
     title = title.charAt(0).toUpperCase() + title.slice(1);
 
-    return { title: title, kind: kind, date: toDateString(date), time: time, weekly: weekly, notes: notes };
+    // Exams and deadlines get a countdown by default (it can be switched off in the preview)
+    const countdown = !weekly && !RE_PREPARATION.test(title) && (hadDue !== null || RE_DEADLINE_WORDS.test(title));
+
+    return { title: title, kind: kind, date: toDateString(date), time: time, weekly: weekly, countdown: countdown, notes: notes };
 }
 
 const quickInput = document.getElementById("quick-input");
@@ -1151,6 +1214,7 @@ const quickTitle = document.getElementById("quick-title");
 const quickDate = document.getElementById("quick-date");
 const quickTime = document.getElementById("quick-time");
 const quickRepeat = document.getElementById("quick-repeat");
+const quickCountdown = document.getElementById("quick-countdown");
 const quickHint = document.getElementById("quick-hint");
 const quickMessage = document.getElementById("quick-message");
 const quickKindButtons = quickPreview.querySelectorAll("[data-kind]");
@@ -1176,6 +1240,7 @@ function showQuickPreview() {
     quickTime.value = parsed.time;
     setQuickKind(parsed.kind);
     quickRepeat.checked = parsed.weekly && parsed.kind === "event";
+    quickCountdown.checked = parsed.countdown;
     quickHint.textContent = parsed.notes.join(" ");
     quickMessage.textContent = "";
     quickPreview.hidden = false;
@@ -1204,13 +1269,20 @@ document.getElementById("quick-save").addEventListener("click", safe(async () =>
 
     if (quickKind === "reminder") {
         const due = new Date(quickDate.value + "T" + (quickTime.value || "09:00")).getTime();
-        await dbPut(STORE_NOTES, { title: title, body: "", due: due, createdAt: Date.now() });
+        await dbPut(STORE_NOTES, {
+            title: title,
+            body: "",
+            due: due,
+            countdown: quickCountdown.checked,
+            createdAt: Date.now()
+        });
     } else {
         await dbPut(STORE_EVENTS, {
             title: title,
             date: quickDate.value,
             time: quickTime.value,
             repeat: quickRepeat.checked ? "weekly" : "none",
+            countdown: quickCountdown.checked && !quickRepeat.checked,
             createdAt: Date.now()
         });
     }
@@ -1652,8 +1724,180 @@ document.getElementById("enable-notifications").addEventListener("click", safe(a
     updateNotificationStatus();
 }));
 
+// ---------- Weekly review ----------
+const reviewBody = document.getElementById("review-body");
+
+// The set of dates covering `count` days, ending `skip` days before today
+function lastDays(count, skip) {
+    const days = new Set();
+    for (let i = skip; i < skip + count; i++) {
+        const day = new Date();
+        day.setDate(day.getDate() - i);
+        days.add(toDateString(day));
+    }
+    return days;
+}
+
+async function renderReview() {
+    const checkins = await dbGetAll(STORE_CHECKINS);
+    const sessions = await dbGetAll(STORE_SESSIONS);
+    const goals = await dbGetAll(STORE_GOALS);
+    const cookies = await dbGetAll(STORE_COOKIES);
+
+    const thisWeek = lastDays(7, 0);
+    const lastWeek = lastDays(7, 7);
+
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+
+    const weekCheckins = checkins.filter((c) => thisWeek.has(c.date));
+    const averageMood = weekCheckins.length === 0
+        ? null
+        : weekCheckins.reduce((sum, c) => sum + c.mood, 0) / weekCheckins.length;
+
+    const minutesIn = (days) => sessions.filter((s) => days.has(s.date)).reduce((sum, s) => sum + s.minutes, 0);
+    const weekFocus = minutesIn(thisWeek);
+    const previousFocus = minutesIn(lastWeek);
+    const weekSessions = sessions.filter((s) => thisWeek.has(s.date)).length;
+
+    const stepsDone = goals
+        .flatMap((g) => g.steps)
+        .filter((s) => s.done && s.doneAt && s.doneAt >= weekStart.getTime()).length;
+    const cookiesAdded = cookies.filter((c) => c.createdAt >= weekStart.getTime()).length;
+    const streaks = computeStreaks(new Set(checkins.map((c) => c.date)));
+
+    const range = { month: "short", day: "numeric" };
+    const rangeText = weekStart.toLocaleDateString("en-US", range) + " to " + new Date().toLocaleDateString("en-US", range);
+
+    const highlights = [];
+    if (weekCheckins.length >= 5) {
+        highlights.push("You checked in on " + weekCheckins.length + " of the last 7 days.");
+    }
+    if (weekFocus > previousFocus && weekFocus > 0) {
+        highlights.push("You focused " + (weekFocus - previousFocus) + " more minutes than the week before.");
+    }
+    if (stepsDone > 0) {
+        highlights.push("You finished " + stepsDone + (stepsDone === 1 ? " goal step." : " goal steps."));
+    }
+    if (highlights.length === 0) {
+        highlights.push("Not much recorded yet. One check-in or one focus session is a good start.");
+    }
+
+    const mood = averageMood === null ? null : MOODS.find((m) => m.value === Math.round(averageMood));
+    const focusChange = weekFocus - previousFocus;
+    const focusText = weekFocus + " min in " + weekSessions + (weekSessions === 1 ? " session" : " sessions") +
+        (previousFocus > 0 || weekFocus > 0
+            ? " (" + (focusChange >= 0 ? "+" : "") + focusChange + " min vs the week before)"
+            : "");
+
+    const rows = [
+        ["Check-ins", weekCheckins.length + " of 7 days"],
+        ["Average mood", mood ? mood.face + " " + mood.label + " (" + averageMood.toFixed(1) + " of 5)" : "No check-ins yet"],
+        ["Focus", focusText],
+        ["Goal steps done", String(stepsDone)],
+        ["Cookies added", String(cookiesAdded)],
+        ["Check-in streak", streaks.current + " days (best " + streaks.best + ")"]
+    ];
+
+    reviewBody.innerHTML = "";
+
+    const period = document.createElement("p");
+    period.className = "hint";
+    period.textContent = rangeText;
+    reviewBody.appendChild(period);
+
+    const summary = document.createElement("p");
+    summary.className = "review-summary";
+    summary.textContent = highlights.join(" ");
+    reviewBody.appendChild(summary);
+
+    for (const [label, value] of rows) {
+        const row = document.createElement("div");
+        row.className = "review-row";
+        const name = document.createElement("span");
+        name.textContent = label;
+        const figure = document.createElement("strong");
+        figure.textContent = value;
+        row.append(name, figure);
+        reviewBody.appendChild(row);
+    }
+}
+
 // ---------- Backup: Export / Import ----------
 const backupStatus = document.getElementById("backup-status");
+const backupPassword = document.getElementById("backup-password");
+const backupPasswordRepeat = document.getElementById("backup-password-repeat");
+
+// ---------- Password-protected backups (AES-GCM, key made from the password with PBKDF2) ----------
+const PBKDF2_ITERATIONS = 600000;
+const MAX_ITERATIONS = 3000000;
+
+function toBase64(bytes) {
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(binary);
+}
+
+function fromBase64(text) {
+    const binary = atob(text);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+}
+
+function requireCrypto() {
+    if (!window.crypto || !window.crypto.subtle) {
+        throw new Error("Password protection needs a secure connection (https). Open the app from its web address, or leave the password empty.");
+    }
+}
+
+async function deriveBackupKey(password, salt, iterations) {
+    const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey(
+        { name: "PBKDF2", salt: salt, iterations: iterations, hash: "SHA-256" },
+        material,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"]
+    );
+}
+
+async function encryptBackup(plainText, password) {
+    requireCrypto();
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveBackupKey(password, salt, PBKDF2_ITERATIONS);
+    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, new TextEncoder().encode(plainText));
+
+    return {
+        app: "nexora",
+        encrypted: true,
+        version: 1,
+        kdf: "PBKDF2-SHA256",
+        iterations: PBKDF2_ITERATIONS,
+        salt: toBase64(salt),
+        iv: toBase64(iv),
+        data: toBase64(new Uint8Array(encrypted))
+    };
+}
+
+async function decryptBackup(envelope, password) {
+    requireCrypto();
+    const iterations = Number(envelope.iterations);
+    const usable = envelope.salt && envelope.iv && envelope.data && iterations >= 100000 && iterations <= MAX_ITERATIONS;
+    if (!usable) throw new Error("This protected backup is damaged or not supported.");
+
+    try {
+        const key = await deriveBackupKey(password, fromBase64(envelope.salt), iterations);
+        const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromBase64(envelope.iv) }, key, fromBase64(envelope.data));
+        return JSON.parse(new TextDecoder().decode(plain));
+    } catch (error) {
+        throw new Error("Wrong password, or the file is damaged.");
+    }
+}
 
 document.getElementById("export-data").addEventListener("click", safe(async () => {
     const data = {
@@ -1668,17 +1912,40 @@ document.getElementById("export-data").addEventListener("click", safe(async () =
         sessions: await dbGetAll(STORE_SESSIONS)
     };
 
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const password = backupPassword.value;
+    const day = new Date().toISOString().slice(0, 10);
+    let output = data;
+    let filename = "nexora-backup-" + day + ".json";
+
+    if (password !== "") {
+        if (password.length < 8) {
+            backupStatus.textContent = "Use a password of at least 8 characters.";
+            return;
+        }
+        if (password !== backupPasswordRepeat.value) {
+            backupStatus.textContent = "The two passwords do not match.";
+            return;
+        }
+        backupStatus.textContent = "Encrypting...";
+        output = await encryptBackup(JSON.stringify(data), password);
+        filename = "nexora-backup-" + day + "-protected.json";
+    }
+
+    const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "nexora-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-    backupStatus.textContent = "Backup file downloaded. Keep it somewhere safe.";
+    backupPassword.value = "";
+    backupPasswordRepeat.value = "";
+    backupStatus.textContent = password !== ""
+        ? "Protected backup downloaded. Keep the password safe, it cannot be recovered."
+        : "Backup file downloaded. Keep it somewhere safe.";
 }));
 
 document.getElementById("import-file").addEventListener("change", safe(async (event) => {
@@ -1694,7 +1961,23 @@ document.getElementById("import-file").addEventListener("change", safe(async (ev
         return;
     }
 
-    const isValid = data.app === "nexora" &&
+    // Password-protected backups are unlocked first
+    if (data && data.encrypted === true) {
+        if (backupPassword.value === "") {
+            backupStatus.textContent = "This backup is password-protected. Type its password above, then choose the file again.";
+            event.target.value = "";
+            return;
+        }
+        try {
+            data = await decryptBackup(data, backupPassword.value);
+        } catch (error) {
+            backupStatus.textContent = error.message;
+            event.target.value = "";
+            return;
+        }
+    }
+
+    const isValid = data && data.app === "nexora" &&
         Array.isArray(data.cookies) &&
         Array.isArray(data.notes);
     if (!isValid) {
@@ -1730,6 +2013,8 @@ document.getElementById("import-file").addEventListener("change", safe(async (ev
     await renderGoals();
     await renderJar();
 
+    backupPassword.value = "";
+    backupPasswordRepeat.value = "";
     backupStatus.textContent = "Import complete: " + data.cookies.length + " cookies, " +
         data.notes.length + " notes, " + events.length + " events and " +
         goals.length + " goals restored.";

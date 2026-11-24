@@ -678,3 +678,42 @@ input[type="number"] { max-width: 140px; }
 }
 
 .note-line { text-align: center; margin: 8px 0 0; }
+
+/* ---------- Part 4: countdown, weekly review ---------- */
+.count {
+    flex: none;
+    align-self: center;
+    font-family: var(--serif);
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.note.due .count { color: var(--rose); }
+
+.review {
+    margin-top: 22px;
+    padding: 4px 14px 10px;
+    border-radius: 14px;
+    background: var(--item);
+}
+
+.review summary {
+    padding: 12px 0;
+    font-family: var(--serif);
+    font-size: 1.15rem;
+    cursor: pointer;
+}
+
+.review-summary { margin: 4px 0 10px; }
+
+.review-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 0;
+    border-top: 1px solid var(--glass-edge);
+}
+
+.review-row span { color: var(--muted); flex: none; }
+.review-row strong { text-align: right; font-weight: 600; }

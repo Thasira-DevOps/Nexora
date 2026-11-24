@@ -75,6 +75,7 @@
                 <label for="quick-time">Time</label>
                 <input id="quick-time" type="time">
                 <label class="check"><input id="quick-repeat" type="checkbox"> Repeat every week</label>
+                <label class="check"><input id="quick-countdown" type="checkbox"> Count down on the Today tab</label>
                 <p id="quick-hint" class="hint"></p>
                 <div class="actions">
                     <button id="quick-save" class="primary">Save</button>
@@ -96,8 +97,16 @@
             <h3>Schedule</h3>
             <ul id="today-schedule" class="notes"></ul>
 
+            <h3>Coming up</h3>
+            <ul id="today-countdown" class="notes"></ul>
+
             <h3>Next steps</h3>
             <ul id="today-steps" class="notes"></ul>
+
+            <details id="weekly-review" class="review">
+                <summary>Weekly review</summary>
+                <div id="review-body"></div>
+            </details>
         </section>
 
         <section id="calendar" class="panel" role="tabpanel" hidden>
@@ -123,6 +132,7 @@
             <label for="event-time">Time (optional)</label>
             <input id="event-time" type="time">
             <label class="check"><input id="event-repeat" type="checkbox"> Repeat every week</label>
+            <label class="check"><input id="event-countdown" type="checkbox"> Count down on the Today tab</label>
             <div class="actions">
                 <button id="add-event" class="primary">Save event</button>
             </div>
@@ -178,6 +188,7 @@
             <textarea id="note-body"></textarea>
             <label for="note-due">Remind me at (optional)</label>
             <input id="note-due" type="datetime-local">
+            <label class="check"><input id="note-countdown" type="checkbox"> Count down on the Today tab</label>
             <div class="actions">
                 <button id="add-note" class="primary">Save note</button>
             </div>
@@ -230,11 +241,15 @@
             <p id="notification-status" class="message" aria-live="polite"></p>
 
             <h3>Backup</h3>
-            <p class="hint">Your data lives only on this device. Export a file to keep a copy, and import it to restore.</p>
+            <p class="hint">Your data lives only on this device. Export a file to keep a copy, and import it to restore. A password makes the file unreadable to anyone else. If you forget it, nobody can recover that backup.</p>
+            <label for="backup-password">Password (optional, at least 8 characters)</label>
+            <input id="backup-password" type="password" autocomplete="new-password">
+            <label for="backup-password-repeat">Repeat the password (when exporting)</label>
+            <input id="backup-password-repeat" type="password" autocomplete="new-password">
             <div class="actions">
                 <button id="export-data" class="primary">Export all data</button>
             </div>
-            <label for="import-file">Import a backup file</label>
+            <label for="import-file">Import a backup file (type its password above if it has one)</label>
             <input id="import-file" type="file" accept=".json,application/json">
             <p id="backup-status" aria-live="polite"></p>
         </section>
