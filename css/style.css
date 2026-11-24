@@ -209,7 +209,7 @@ label {
     color: var(--muted);
 }
 
-input, textarea {
+input, textarea, select {
     width: 100%;
     font: inherit;
     color: var(--ink);
@@ -647,3 +647,34 @@ input[type="number"] { max-width: 140px; }
 }
 
 #timer-message { text-align: center; }
+
+/* ---------- Part 3: quick add, templates, tagged cookies ---------- */
+.preview {
+    margin-top: 12px;
+    padding: 14px;
+    border-radius: 14px;
+    background: var(--item);
+    border-left: 4px solid var(--accent);
+}
+
+.preview[hidden] { display: none; }
+.preview .segmented { margin-bottom: 4px; }
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 0;
+}
+
+.chip {
+    padding: 6px 12px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--ink);
+    background: var(--item);
+    border: 1px solid var(--glass-edge);
+    border-radius: 99px;
+}
+
+.note-line { text-align: center; margin: 8px 0 0; }

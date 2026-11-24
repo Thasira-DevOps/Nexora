@@ -55,6 +55,33 @@
             <h2 id="today-heading">Today</h2>
             <p id="today-date" class="hint"></p>
 
+            <h3>Quick add</h3>
+            <label for="quick-input">Type it the way you would say it</label>
+            <input id="quick-input" type="text" placeholder="Networks lecture every Monday 8am">
+            <div class="actions">
+                <button id="quick-next" class="secondary">Next</button>
+            </div>
+            <p id="quick-message" class="message" aria-live="polite"></p>
+
+            <div id="quick-preview" class="preview" hidden>
+                <div class="segmented" role="group" aria-label="Type">
+                    <button data-kind="event" aria-pressed="true">Event</button>
+                    <button data-kind="reminder" aria-pressed="false">Reminder</button>
+                </div>
+                <label for="quick-title">Title</label>
+                <input id="quick-title" type="text">
+                <label for="quick-date">Date</label>
+                <input id="quick-date" type="date">
+                <label for="quick-time">Time</label>
+                <input id="quick-time" type="time">
+                <label class="check"><input id="quick-repeat" type="checkbox"> Repeat every week</label>
+                <p id="quick-hint" class="hint"></p>
+                <div class="actions">
+                    <button id="quick-save" class="primary">Save</button>
+                    <button id="quick-cancel" class="secondary">Cancel</button>
+                </div>
+            </div>
+
             <h3>Check-in</h3>
             <p id="streak-line" class="hint"></p>
             <div id="mood-buttons" class="mood" role="group" aria-label="How is today going?"></div>
@@ -106,6 +133,8 @@
             <p class="hint">Turn a goal into a route of small steps and tick them off as you go.</p>
             <label for="goal-title">Goal</label>
             <input id="goal-title" type="text" placeholder="What do you want to achieve?">
+            <p class="hint">Need ideas? Pick a template to fill in the steps, then edit them freely.</p>
+            <div id="goal-templates" class="chips"></div>
             <label for="goal-steps">Steps (one per line)</label>
             <textarea id="goal-steps" placeholder="Finish chapter 1&#10;Do past papers&#10;Revise weak topics"></textarea>
             <div class="actions">
@@ -164,12 +193,20 @@
 
             <div class="actions center">
                 <button id="pull-cookie" class="primary">Pull a cookie</button>
+                <button id="pull-big" class="secondary">Before something big</button>
             </div>
             <p id="cookie-display" aria-live="polite"></p>
+            <p id="cookie-note" class="hint note-line" aria-live="polite"></p>
 
             <h3>Add a cookie</h3>
             <label for="cookie-input">New cookie</label>
             <textarea id="cookie-input" placeholder="A kind message, a proud moment, a reason to keep going..."></textarea>
+            <label for="cookie-tag">Best for</label>
+            <select id="cookie-tag">
+                <option value="any">Any day</option>
+                <option value="rough">Rough days</option>
+                <option value="big">Before something big</option>
+            </select>
             <div class="actions">
                 <button id="add-cookie" class="secondary">Add to jar</button>
             </div>

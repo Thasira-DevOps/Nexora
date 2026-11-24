@@ -263,13 +263,24 @@ async function renderJar() {
     }
 }
 
-function showCookieText(text, animate) {
+const cookieNote = document.getElementById("cookie-note");
+const cookieTag = document.getElementById("cookie-tag");
+
+function showCookieText(text, animate, note) {
     cookieDisplay.textContent = text;
+    cookieNote.textContent = note || "";
     cookieDisplay.classList.remove("reveal");
     if (animate) {
         void cookieDisplay.offsetWidth; // restart the animation
         cookieDisplay.classList.add("reveal");
     }
+}
+
+// Today's check-in mood (1 to 5), or null if there is none yet
+async function todaysMood() {
+    const checkins = await dbGetAll(STORE_CHECKINS);
+    const today = checkins.find((c) => c.date === toDateString(new Date()));
+    return today ? today.mood : null;
 }
 
 document.getElementById("add-cookie").addEventListener("click", safe(async () => {
@@ -278,13 +289,16 @@ document.getElementById("add-cookie").addEventListener("click", safe(async () =>
         showCookieText("Write something first.", false);
         return;
     }
-    await dbPut(STORE_COOKIES, { text: text, createdAt: Date.now() });
+    await dbPut(STORE_COOKIES, { text: text, tag: cookieTag.value, createdAt: Date.now() });
     cookieInput.value = "";
+    cookieTag.value = "any";
     showCookieText("Cookie added to your jar! 🍪", false);
     await renderJar();
 }));
 
-document.getElementById("pull-cookie").addEventListener("click", safe(async () => {
+// mode "auto": prefers "rough day" cookies when today's check-in is low.
+// mode "big": prefers cookies meant for before something big.
+async function pullCookie(mode) {
     if (pulling) return;
 
     const cookies = await dbGetAll(STORE_COOKIES);
@@ -293,8 +307,30 @@ document.getElementById("pull-cookie").addEventListener("click", safe(async () =
         return;
     }
 
-    // Avoid showing the same cookie twice in a row when there are others
-    const pool = cookies.length > 1 ? cookies.filter((c) => c.id !== lastCookieId) : cookies;
+    let candidates = cookies;
+    let note = "";
+
+    if (mode === "big") {
+        const big = cookies.filter((c) => c.tag === "big");
+        if (big.length > 0) {
+            candidates = big;
+            note = "Picked for before something big.";
+        } else {
+            note = "No cookies are marked for big moments yet, so this one is random.";
+        }
+    } else {
+        const mood = await todaysMood();
+        if (mood !== null && mood <= 2) {
+            const rough = cookies.filter((c) => c.tag === "rough");
+            if (rough.length > 0) {
+                candidates = rough;
+                note = "Picked for a rough day.";
+            }
+        }
+    }
+
+    // Avoid showing the same cookie twice in a row when there are other choices
+    const pool = candidates.length > 1 ? candidates.filter((c) => c.id !== lastCookieId) : candidates;
     const picked = pool[Math.floor(Math.random() * pool.length)];
     lastCookieId = picked.id;
 
@@ -306,11 +342,14 @@ document.getElementById("pull-cookie").addEventListener("click", safe(async () =
         jar.classList.add("shake");
         await new Promise((resolve) => setTimeout(resolve, reducedMotion.matches ? 0 : 600));
         jar.classList.remove("shake");
-        showCookieText(picked.text, true);
+        showCookieText(picked.text, true, note);
     } finally {
         pulling = false;
     }
-}));
+}
+
+document.getElementById("pull-cookie").addEventListener("click", safe(() => pullCookie("auto")));
+document.getElementById("pull-big").addEventListener("click", safe(() => pullCookie("big")));
 
 // ---------- Notes & Reminders ----------
 const noteTitle = document.getElementById("note-title");
@@ -702,6 +741,79 @@ document.getElementById("add-goal").addEventListener("click", safe(async () => {
     await renderGoals();
 }));
 
+// ---------- Goal templates ----------
+const GOAL_TEMPLATES = [
+    {
+        name: "Study for an exam",
+        steps: [
+            "List every topic the exam covers",
+            "Gather notes and past papers",
+            "Make a study timetable",
+            "Revise one topic at a time",
+            "Practise past papers under time limits",
+            "Review the weak topics again",
+            "Rest well the night before"
+        ]
+    },
+    {
+        name: "Finish an assignment",
+        steps: [
+            "Read the requirements carefully",
+            "Plan the outline",
+            "Write the first draft",
+            "Review and improve it",
+            "Check the format and references",
+            "Submit before the deadline"
+        ]
+    },
+    {
+        name: "Build a habit",
+        steps: [
+            "Pick one small action",
+            "Choose a fixed time each day",
+            "Do it 3 days in a row",
+            "Reach one full week",
+            "Reach 21 days",
+            "Reflect on what helped"
+        ]
+    },
+    {
+        name: "Learn a skill",
+        steps: [
+            "Decide what good enough looks like",
+            "Find one good course or book",
+            "Practise for 20 minutes a day",
+            "Build a small project",
+            "Teach or share what you learned"
+        ]
+    },
+    {
+        name: "Prepare a presentation",
+        steps: [
+            "Decide the main message",
+            "Outline the slides",
+            "Create the slides",
+            "Practise out loud",
+            "Get feedback from a friend",
+            "Do a final run-through"
+        ]
+    }
+];
+
+const goalTemplateList = document.getElementById("goal-templates");
+
+for (const template of GOAL_TEMPLATES) {
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.textContent = template.name;
+    chip.addEventListener("click", () => {
+        if (goalSteps.value.trim() !== "" && !confirm("Replace the steps you have typed?")) return;
+        goalSteps.value = template.steps.join("\n");
+        goalSteps.focus();
+    });
+    goalTemplateList.appendChild(chip);
+}
+
 // ---------- Today ----------
 const todayHeading = document.getElementById("today-heading");
 const todayDate = document.getElementById("today-date");
@@ -820,6 +932,298 @@ async function renderToday() {
 
     await renderCheckin();
 }
+
+// ---------- Quick add (understands plain sentences, no AI involved) ----------
+const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const FULL_DAYS = DAY_NAMES.join("|");
+const ANY_DAY = FULL_DAYS + "|sun|mon|tues|tue|wed|thurs|thur|thu|fri|sat";
+const MONTH_PATTERN = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
+const MONTH_ABBREVIATIONS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+const RE_REMIND = /\bremind(?:er)?(?:\s+me)?(?:\s+to)?\b/i;
+const RE_DUE = /\bdue\b/i;
+const RE_EVERY_DAY_NAME = new RegExp("\\bevery\\s+(" + ANY_DAY + ")\\b", "i");
+const RE_EVERY_WEEK = /\b(?:every\s+week|weekly)\b/i;
+const RE_DAILY = /\b(?:every\s*day|daily)\b/i;
+const RE_TIME_AMPM = /\b(?:at\s+)?(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)\b/i;
+const RE_TIME_24H = /\b(?:at\s+)?([01]?\d|2[0-3]):([0-5]\d)\b/;
+const RE_TIME_BARE = /\bat\s+(\d{1,2})\b/i;
+const RE_ISO_DATE = /\b(?:on\s+)?(\d{4})-(\d{2})-(\d{2})\b/;
+const RE_SLASH_DATE = /\b(?:on\s+)?(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/;
+const RE_DAY_MONTH = new RegExp("\\b(?:on\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(" + MONTH_PATTERN + ")\\b", "i");
+const RE_MONTH_DAY = new RegExp("\\b(?:on\\s+)?(" + MONTH_PATTERN + ")\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b", "i");
+const RE_DAY_AFTER_TOMORROW = /\bday after tomorrow\b/i;
+const RE_TOMORROW = /\btomorrow\b/i;
+const RE_TODAY = /\b(?:today|tonight)\b/i;
+const RE_IN_N = /\bin\s+(\d{1,3})\s+(day|days|week|weeks)\b/i;
+const RE_PREFIXED_DAY = new RegExp("\\b(next|this|on)\\s+(" + ANY_DAY + ")\\b", "i");
+const RE_FULL_DAY = new RegExp("\\b(" + FULL_DAYS + ")\\b", "i");
+
+function pad2(number) {
+    return String(number).padStart(2, "0");
+}
+
+function dayIndex(word) {
+    return DAY_NAMES.findIndex((name) => name.startsWith(word.slice(0, 3).toLowerCase()));
+}
+
+function monthIndex(word) {
+    return MONTH_ABBREVIATIONS.indexOf(word.slice(0, 3).toLowerCase());
+}
+
+function addDays(date, days) {
+    const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    result.setDate(result.getDate() + days);
+    return result;
+}
+
+// The next date that falls on this weekday (today counts unless strictlyAfter is true)
+function nextWeekday(from, index, strictlyAfter) {
+    let difference = (index - from.getDay() + 7) % 7;
+    if (strictlyAfter && difference === 0) difference = 7;
+    return addDays(from, difference);
+}
+
+// Finds a pattern, removes it from the sentence and returns the match
+function takeMatch(state, regex) {
+    const match = state.text.match(regex);
+    if (!match) return null;
+    state.text = state.text.slice(0, match.index) + " " + state.text.slice(match.index + match[0].length);
+    return match;
+}
+
+function makeDate(year, monthZero, day) {
+    const candidate = new Date(year, monthZero, day);
+    const valid = candidate.getFullYear() === year && candidate.getMonth() === monthZero && candidate.getDate() === day;
+    return valid ? candidate : null;
+}
+
+function parseQuickAdd(input, now) {
+    const state = { text: " " + input.trim() + " " };
+    const notes = [];
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let kind = "event";
+    let weekly = false;
+    let everyDay = null;
+    let date = null;
+    let time = "";
+    let match = null;
+
+    // Dates without a year mean the next time that date comes around
+    const upcoming = (monthZero, day) => {
+        let candidate = makeDate(today.getFullYear(), monthZero, day);
+        if (candidate && candidate < today) candidate = makeDate(today.getFullYear() + 1, monthZero, day);
+        return candidate;
+    };
+
+    // Reminder or event
+    const hadRemind = takeMatch(state, RE_REMIND);
+    const hadDue = takeMatch(state, RE_DUE);
+    if (hadRemind || hadDue) kind = "reminder";
+
+    // Repeats
+    match = takeMatch(state, RE_EVERY_DAY_NAME);
+    if (match) {
+        weekly = true;
+        everyDay = dayIndex(match[1]);
+    } else if (takeMatch(state, RE_EVERY_WEEK)) {
+        weekly = true;
+    }
+    if (takeMatch(state, RE_DAILY)) {
+        notes.push("Daily repeats are not supported yet, so this is saved once.");
+    }
+
+    // Time
+    match = takeMatch(state, RE_TIME_AMPM);
+    if (match) {
+        const hour12 = Number(match[1]);
+        if (hour12 >= 1 && hour12 <= 12) {
+            const hour = (hour12 % 12) + (match[3].toLowerCase() === "pm" ? 12 : 0);
+            time = pad2(hour) + ":" + (match[2] || "00");
+        }
+    } else {
+        match = takeMatch(state, RE_TIME_24H);
+        if (match) {
+            time = pad2(Number(match[1])) + ":" + match[2];
+        } else {
+            match = takeMatch(state, RE_TIME_BARE);
+            if (match) {
+                let hour = Number(match[1]);
+                if (hour >= 1 && hour <= 7) hour += 12; // "at 7" usually means the evening
+                if (hour <= 23) {
+                    time = pad2(hour) + ":00";
+                    notes.push('Read "at ' + match[1] + '" as ' + time + ". Change it below if that is wrong.");
+                }
+            }
+        }
+    }
+
+    // Date
+    match = takeMatch(state, RE_ISO_DATE);
+    if (match) date = makeDate(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+
+    if (!date) {
+        match = takeMatch(state, RE_SLASH_DATE);
+        if (match) {
+            const day = Number(match[1]);
+            const monthZero = Number(match[2]) - 1;
+            if (match[3]) {
+                let year = Number(match[3]);
+                if (year < 100) year += 2000;
+                date = makeDate(year, monthZero, day);
+            } else {
+                date = upcoming(monthZero, day);
+            }
+        }
+    }
+
+    if (!date) {
+        match = takeMatch(state, RE_DAY_MONTH);
+        if (match) date = upcoming(monthIndex(match[2]), Number(match[1]));
+    }
+
+    if (!date) {
+        match = takeMatch(state, RE_MONTH_DAY);
+        if (match) date = upcoming(monthIndex(match[1]), Number(match[2]));
+    }
+
+    if (!date && takeMatch(state, RE_DAY_AFTER_TOMORROW)) date = addDays(today, 2);
+    if (!date && takeMatch(state, RE_TOMORROW)) date = addDays(today, 1);
+    if (!date && takeMatch(state, RE_TODAY)) date = today;
+
+    if (!date) {
+        match = takeMatch(state, RE_IN_N);
+        if (match) {
+            const unit = match[2].toLowerCase().startsWith("week") ? 7 : 1;
+            date = addDays(today, Number(match[1]) * unit);
+        }
+    }
+
+    if (!date) {
+        match = takeMatch(state, RE_PREFIXED_DAY);
+        if (match) date = nextWeekday(today, dayIndex(match[2]), match[1].toLowerCase() === "next");
+    }
+
+    if (!date) {
+        match = takeMatch(state, RE_FULL_DAY);
+        if (match) date = nextWeekday(today, dayIndex(match[1]), false);
+    }
+
+    // "every Monday 8am": start from the next Monday that has not already passed
+    if (!date && everyDay !== null) {
+        date = nextWeekday(today, everyDay, false);
+        if (time && date.getTime() === today.getTime()) {
+            const nowTime = pad2(now.getHours()) + ":" + pad2(now.getMinutes());
+            if (time <= nowTime) date = addDays(date, 7);
+        }
+    }
+
+    if (!date) date = today;
+
+    // Reminders cannot repeat, and they need a time
+    if (weekly && kind === "reminder") {
+        kind = "event";
+        notes.push("Repeating entries are saved as events.");
+    }
+    if (kind === "reminder" && time === "") {
+        time = "09:00";
+        notes.push("No time found, so the reminder is set for 09:00.");
+    }
+
+    // Whatever is left is the title
+    let title = state.text.replace(/\s+/g, " ").trim();
+    let previous = "";
+    while (previous !== title) {
+        previous = title;
+        title = title
+            .replace(/^[\s,:;.\-\u2013]+|[\s,:;.\-\u2013]+$/g, "")
+            .replace(/\s+(?:on|at|by|for|from|to|in|the)$/i, "");
+    }
+    if (title === "") title = "Untitled";
+    title = title.charAt(0).toUpperCase() + title.slice(1);
+
+    return { title: title, kind: kind, date: toDateString(date), time: time, weekly: weekly, notes: notes };
+}
+
+const quickInput = document.getElementById("quick-input");
+const quickPreview = document.getElementById("quick-preview");
+const quickTitle = document.getElementById("quick-title");
+const quickDate = document.getElementById("quick-date");
+const quickTime = document.getElementById("quick-time");
+const quickRepeat = document.getElementById("quick-repeat");
+const quickHint = document.getElementById("quick-hint");
+const quickMessage = document.getElementById("quick-message");
+const quickKindButtons = quickPreview.querySelectorAll("[data-kind]");
+
+let quickKind = "event";
+
+function setQuickKind(kind) {
+    quickKind = kind;
+    quickKindButtons.forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.kind === kind));
+    });
+    quickRepeat.disabled = kind === "reminder";
+    if (kind === "reminder") quickRepeat.checked = false;
+}
+
+function showQuickPreview() {
+    const text = quickInput.value.trim();
+    if (text === "") return;
+
+    const parsed = parseQuickAdd(text, new Date());
+    quickTitle.value = parsed.title;
+    quickDate.value = parsed.date;
+    quickTime.value = parsed.time;
+    setQuickKind(parsed.kind);
+    quickRepeat.checked = parsed.weekly && parsed.kind === "event";
+    quickHint.textContent = parsed.notes.join(" ");
+    quickMessage.textContent = "";
+    quickPreview.hidden = false;
+}
+
+quickKindButtons.forEach((button) => {
+    button.addEventListener("click", () => setQuickKind(button.dataset.kind));
+});
+
+document.getElementById("quick-next").addEventListener("click", showQuickPreview);
+
+quickInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") showQuickPreview();
+});
+
+document.getElementById("quick-cancel").addEventListener("click", () => {
+    quickPreview.hidden = true;
+});
+
+document.getElementById("quick-save").addEventListener("click", safe(async () => {
+    const title = quickTitle.value.trim();
+    if (title === "" || quickDate.value === "") {
+        alert("Please give it a title and a date.");
+        return;
+    }
+
+    if (quickKind === "reminder") {
+        const due = new Date(quickDate.value + "T" + (quickTime.value || "09:00")).getTime();
+        await dbPut(STORE_NOTES, { title: title, body: "", due: due, createdAt: Date.now() });
+    } else {
+        await dbPut(STORE_EVENTS, {
+            title: title,
+            date: quickDate.value,
+            time: quickTime.value,
+            repeat: quickRepeat.checked ? "weekly" : "none",
+            createdAt: Date.now()
+        });
+    }
+
+    const savedAs = quickKind;
+    quickInput.value = "";
+    quickPreview.hidden = true;
+    quickMessage.textContent = savedAs === "reminder" ? "Reminder added." : "Event added to your calendar.";
+
+    await renderToday();
+    await renderNotes();
+    await renderCalendar();
+}));
 
 // ---------- Daily check-in and streak ----------
 const MOODS = [
